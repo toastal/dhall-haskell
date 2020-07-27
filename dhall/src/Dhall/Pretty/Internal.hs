@@ -200,6 +200,9 @@ renderSrc strip (Just (Src {..}))
 renderSrc _ _ =
     mempty
 
+stripSpaces :: Text -> Text
+stripSpaces = Text.dropAround (\c -> c == ' ' || c == '\t')
+
 -- Annotation helpers
 keyword, syntax, label, literal, builtin, operator :: Doc Ann -> Doc Ann
 keyword  = Pretty.annotate Keyword
@@ -623,8 +626,6 @@ prettyCharacterSet characterSet expression =
             (fmap (duplicate . docA) (toList as) ++ [ docB ])
       where
         MultiLet as b = multiLet a0 b0
-
-        stripSpaces = Text.dropAround (\c -> c == ' ' || c == '\t')
 
         -- Strip a single newline character. Needed to ensure idempotency in
         -- cases where we add hard line breaks.
@@ -1244,9 +1245,16 @@ prettyCharacterSet characterSet expression =
         -> Doc Ann
         -> (k, RecordField Src a)
         -> (Doc Ann, Doc Ann)
-    prettyKeyValue prettyKey prettyValue separator (key, RecordField _mSrc val) =
+    prettyKeyValue prettyKey prettyValue separator (key, RecordField mSrc val) =
         duplicate (Pretty.group (Pretty.flatAlt long short))
       where
+        keyWithComment = case mSrc of
+            Nothing -> prettyKey key
+            Just src ->
+                if Text.all isWhitespace (srcText src)
+                    then prettyKey key
+                    else Pretty.align (renderSrc stripSpaces mSrc <> Pretty.hardline <> prettyKey key)
+
         completion _T r =
                 " "
             <>  prettySelectorExpression _T
@@ -1257,14 +1265,13 @@ prettyCharacterSet characterSet expression =
                     _ ->
                         prettySelectorExpression r
 
-        short = prettyKey key
+        short = keyWithComment
             <>  " "
             <>  separator
             <>  " "
             <>  prettyValue val
 
-        long =
-                prettyKey key
+        long = keyWithComment
             <>  " "
             <>  separator
             <>  case shallowDenote val of
